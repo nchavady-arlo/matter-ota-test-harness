@@ -59,6 +59,8 @@ command -v python3 >/dev/null || MISSING_DEPS+=("python3")
 command -v ninja >/dev/null || MISSING_DEPS+=("ninja-build")
 command -v pkg-config >/dev/null || MISSING_DEPS+=("pkg-config")
 command -v git >/dev/null || MISSING_DEPS+=("git")
+command -v aarch64-linux-gnu-g++ >/dev/null || MISSING_DEPS+=("g++-aarch64-linux-gnu")
+command -v aarch64-linux-gnu-gcc >/dev/null || MISSING_DEPS+=("gcc-aarch64-linux-gnu")
 
 if [ ${#MISSING_DEPS[@]} -ne 0 ]; then
     echo "Missing dependencies: ${MISSING_DEPS[*]}"
@@ -81,31 +83,35 @@ fi
 echo "Activating Matter environment..."
 source "$SDK_ROOT/scripts/activate.sh"
 
-# Configure build for aarch64
-echo ""
-echo "Configuring build for aarch64..."
-echo "Build directory: $BUILD_DIR"
-
-gn gen "$BUILD_DIR" --args='
-target_cpu="arm64"
-is_debug=false
-chip_config_network_layer_ble=false
-'
-
 # Build OTA requestor app
 echo ""
 echo "Building OTA requestor app..."
-ninja -C "$BUILD_DIR" chip-ota-requestor-app
+bash "$SDK_ROOT/scripts/examples/gn_build_example.sh" \
+    "$SDK_ROOT/examples/ota-requestor-app/linux" \
+    "$BUILD_DIR" \
+    "target_cpu=\"arm64\"" \
+    "is_debug=false" \
+    "chip_config_network_layer_ble=false"
 
 # Build OTA provider app (reference control)
 echo ""
 echo "Building OTA provider app (reference)..."
-ninja -C "$BUILD_DIR" chip-ota-provider-app
+bash "$SDK_ROOT/scripts/examples/gn_build_example.sh" \
+    "$SDK_ROOT/examples/ota-provider-app/linux" \
+    "$BUILD_DIR" \
+    "target_cpu=\"arm64\"" \
+    "is_debug=false" \
+    "chip_config_network_layer_ble=false"
 
 # Build chip-tool
 echo ""
 echo "Building chip-tool..."
-ninja -C "$BUILD_DIR" chip-tool
+bash "$SDK_ROOT/scripts/examples/gn_build_example.sh" \
+    "$SDK_ROOT/examples/chip-tool" \
+    "$BUILD_DIR" \
+    "target_cpu=\"arm64\"" \
+    "is_debug=false" \
+    "chip_config_network_layer_ble=false"
 
 # Verify binaries
 echo ""
