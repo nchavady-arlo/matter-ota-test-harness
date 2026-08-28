@@ -6,28 +6,48 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SDK_ROOT="/home/nchavady/workspace/github/connectedhomeip"
+SDK_ROOT="${MATTER_SDK_ROOT:-${SCRIPT_DIR}/connectedhomeip}"
 BUILD_DIR="${SDK_ROOT}/out/aarch64"
+SDK_TAG="v1.5.1.0"
+SDK_REPO="https://github.com/project-chip/connectedhomeip.git"
 
 echo "=================================================="
 echo "Matter OTA Test Harness - Build Setup"
 echo "=================================================="
 
+# Clone SDK if it doesn't exist
+if [ ! -d "$SDK_ROOT" ]; then
+    echo "Matter SDK not found at: $SDK_ROOT"
+    echo "Cloning Matter SDK (this will take a few minutes)..."
+    git clone --depth 1 --branch "$SDK_TAG" "$SDK_REPO" "$SDK_ROOT"
+    echo "✓ SDK cloned"
+fi
+
 # Verify SDK version
 cd "$SDK_ROOT"
+
+# Fetch tags if needed
+if ! git describe --tags --exact-match 2>/dev/null; then
+    git fetch --tags --depth=1 2>/dev/null || true
+fi
+
+CURRENT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 CURRENT_TAG=$(git describe --tags --exact-match 2>/dev/null || echo "")
-CURRENT_COMMIT=$(git rev-parse --short HEAD)
 
 echo "SDK Location: $SDK_ROOT"
 echo "Current commit: $CURRENT_COMMIT"
 echo "Current tag: ${CURRENT_TAG:-<not on a tag>}"
 
-if [ "$CURRENT_TAG" != "v1.5.1.0" ]; then
-    echo "WARNING: Expected v1.5.1.0, found $CURRENT_TAG"
-    echo "This harness is validated against v1.5.1.0"
-    read -p "Continue anyway? (y/N) " -n 1 -r
-    echo
-    [[ ! $REPLY =~ ^[Yy]$ ]] && exit 1
+# Checkout correct tag if not already on it
+if [ "$CURRENT_TAG" != "$SDK_TAG" ]; then
+    echo "Checking out $SDK_TAG..."
+    git fetch --tags --depth=1 || true
+    git checkout "$SDK_TAG" || {
+        echo "ERROR: Failed to checkout $SDK_TAG"
+        echo "You can manually set MATTER_SDK_ROOT to an existing SDK checkout:"
+        echo "  export MATTER_SDK_ROOT=/path/to/connectedhomeip"
+        exit 1
+    }
 fi
 
 # Check dependencies
@@ -51,8 +71,10 @@ echo ""
 echo "Bootstrapping SDK environment..."
 if [ ! -d "$SDK_ROOT/.environment" ]; then
     echo "Running bootstrap (this may take several minutes)..."
-    bash "$SDK_ROOT/scripts/checkout_submodules.py" --shallow --platform linux
-    bash "$SDK_ROOT/scripts/build/gn_bootstrap.sh"
+    # Use Matter SDK's own bootstrap which handles submodules efficiently
+    cd "$SDK_ROOT"
+    python3 scripts/checkout_submodules.py --shallow --platform linux
+    bash scripts/build/gn_bootstrap.sh
 fi
 
 # Activate environment
@@ -72,13 +94,13 @@ chip_config_network_layer_ble=false
 
 # Build OTA requestor app
 echo ""
-echo "Building chip-ota-requestor-app..."
-ninja -C "$BUILD_DIR" chip-ota-requestor-app
+echo "Building OTA requestor app..."
+ninja -C "$BUILD_DIR" examples/ota-requestor-app/linux
 
 # Build OTA provider app (reference control)
 echo ""
-echo "Building chip-ota-provider-app (reference)..."
-ninja -C "$BUILD_DIR" chip-ota-provider-app
+echo "Building OTA provider app (reference)..."
+ninja -C "$BUILD_DIR" examples/ota-provider-app/linux
 
 # Build chip-tool
 echo ""
@@ -109,11 +131,16 @@ if [ "$ALL_OK" = true ]; then
     echo "=================================================="
     echo "Build complete!"
     echo "=================================================="
+    echo "SDK Location: $SDK_ROOT"
     echo "Binaries location: $BUILD_DIR"
     echo ""
     echo "Next steps:"
     echo "  1. Generate test images: ./scripts/make-images.sh"
     echo "  2. Launch test: ./scripts/run-test.sh happy-path"
+    echo ""
+    echo "To use a different SDK location:"
+    echo "  export MATTER_SDK_ROOT=/path/to/connectedhomeip"
+    echo "  ./build-setup.sh"
     exit 0
 else
     echo ""

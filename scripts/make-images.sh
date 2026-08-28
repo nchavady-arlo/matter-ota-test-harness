@@ -6,7 +6,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_ROOT="$(dirname "$SCRIPT_DIR")"
-SDK_ROOT="/home/nchavady/workspace/github/connectedhomeip"
+SDK_ROOT="${MATTER_SDK_ROOT:-${HARNESS_ROOT}/connectedhomeip}"
 IMAGE_DIR="${HARNESS_ROOT}/images"
 OTA_TOOL="${SDK_ROOT}/src/app/ota_image_tool.py"
 

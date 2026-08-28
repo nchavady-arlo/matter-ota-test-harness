@@ -6,7 +6,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_ROOT="$(dirname "$SCRIPT_DIR")"
-SDK_ROOT="/home/nchavady/workspace/github/connectedhomeip"
+SDK_ROOT="${MATTER_SDK_ROOT:-${HARNESS_ROOT}/connectedhomeip}"
 BUILD_DIR="${SDK_ROOT}/out/aarch64"
 CHIP_TOOL="${BUILD_DIR}/chip-tool"
 
