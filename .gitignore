@@ -1,0 +1,35 @@
+# Generated OTA images and firmware binaries
+images/*.ota
+images/*.bin
+images/*.txt
+images/downloaded-*.bin
+
+# Generated image manifest
+images/image-list.json
+
+# Log files
+logs/*.log
+
+# KVS persistent storage
+kvs/*.kvs
+
+# PID files
+*.pid
+
+# Build artifacts (if SDK built in harness directory)
+out/
+.environment/
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Keep directory structure but ignore contents
+!images/.gitkeep
+!logs/.gitkeep
+!kvs/.gitkeep
