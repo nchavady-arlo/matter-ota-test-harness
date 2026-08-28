@@ -14,7 +14,7 @@
 Test Orchestrator Scripts
   ├─ run-requestor.sh      → Launch N independent requestor instances
   ├─ commission.sh         → Commission requestors, setup ACLs, wire provider
-  ├─ make-images.sh        → Generate test OTA images
+  ├─ make-ota-images.sh        → Generate test OTA images
   └─ run-test.sh           → Execute test scenarios with assertions
 
 Each Requestor Instance:
@@ -46,7 +46,7 @@ cd /home/nchavady/workspace/github/iris/ota-test-harness
 ### 2. Generate Test Images
 
 ```bash
-./scripts/make-images.sh
+./scripts/make-ota-images.sh
 ```
 
 **Generated images:**
@@ -459,7 +459,7 @@ ota-test-harness/
 ├── README.md                    # This file
 ├── build-setup.sh               # One-time build script
 ├── scripts/
-│   ├── make-images.sh           # Generate test OTA images
+│   ├── make-ota-images.sh           # Generate test OTA images
 │   ├── run-requestor.sh         # Launch/stop requestor instances
 │   ├── commission.sh            # Commission + wire provider
 │   └── run-test.sh              # Test scenario runner
@@ -564,7 +564,7 @@ When a test fails, determine if the bug is in:
 1. **Validate harness with reference provider:**
    ```bash
    ./build-setup.sh
-   ./scripts/make-images.sh
+   ./scripts/make-ota-images.sh
    ./scripts/run-test.sh all
    ```
 

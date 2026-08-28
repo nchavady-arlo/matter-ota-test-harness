@@ -102,7 +102,7 @@ if [ "$ALL_OK" = true ]; then
     echo "Binaries: $BUILD_DIR"
     echo ""
     echo "Next steps:"
-    echo "  ./scripts/make-images.sh"
+    echo "  ./scripts/make-ota-images.sh"
     echo "  ./scripts/run-test.sh happy-path"
     exit 0
 else

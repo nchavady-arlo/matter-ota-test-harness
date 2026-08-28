@@ -17,7 +17,7 @@ cd /home/nchavady/workspace/github/iris/ota-test-harness
 ./build-setup.sh
 
 # 2. Generate test images (~5 sec)
-./scripts/make-images.sh
+./scripts/make-ota-images.sh
 
 # 3. Run happy path test (~30 sec)
 ./scripts/run-test.sh happy-path
