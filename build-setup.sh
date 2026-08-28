@@ -95,12 +95,12 @@ chip_config_network_layer_ble=false
 # Build OTA requestor app
 echo ""
 echo "Building OTA requestor app..."
-ninja -C "$BUILD_DIR" examples/ota-requestor-app/linux
+ninja -C "$BUILD_DIR" chip-ota-requestor-app
 
 # Build OTA provider app (reference control)
 echo ""
 echo "Building OTA provider app (reference)..."
-ninja -C "$BUILD_DIR" examples/ota-provider-app/linux
+ninja -C "$BUILD_DIR" chip-ota-provider-app
 
 # Build chip-tool
 echo ""
