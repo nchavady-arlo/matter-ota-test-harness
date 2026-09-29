@@ -5,9 +5,13 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HARNESS_ROOT="$(dirname "$SCRIPT_DIR")"
-SDK_ROOT="${MATTER_SDK_ROOT:-${HARNESS_ROOT}/connectedhomeip}"
-BUILD_DIR="${SDK_ROOT}/out/linux_x64"
+HARNESS_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+# Load central configuration
+source "$HARNESS_ROOT/setup.sh"
+
+SDK_ROOT="$MATTER_SDK_ROOT"
+BUILD_DIR="$MATTER_BUILD_DIR"
 IMAGE_DIR="${HARNESS_ROOT}/images"
 LOG_DIR="${HARNESS_ROOT}/logs"
 
@@ -117,7 +121,7 @@ test_happy_path() {
     log_info "Step 2: Start reference provider"
     start_reference_provider "$image"
 
-    sleep 2
+    sleep 5  # Wait for provider commissioning to complete (avoids node ID race)
 
     log_info "Step 3: Commission requestor"
     "$SCRIPT_DIR/commission.sh" commission "$instance"
@@ -136,7 +140,7 @@ test_happy_path() {
     log_info "✓ QueryImage successful"
 
     log_info "Step 7: Wait for download completion"
-    if ! wait_for_log_pattern "$instance" "Download complete" 60; then
+    if ! wait_for_log_pattern "$instance" "OTA image downloaded to" 60; then
         log_error "Download did not complete"
         return 1
     fi
@@ -339,8 +343,8 @@ start_reference_provider() {
     echo $! > "${HARNESS_ROOT}/provider.pid"
     sleep 3
 
-    # Commission provider
-    "$BUILD_DIR/chip-tool" pairing onnetwork "$PROVIDER_NODE_ID" 20202020 \
+    # Commission provider (use onnetwork-long to specify discriminator and avoid pairing the wrong device)
+    "$BUILD_DIR/chip-tool" pairing onnetwork-long "$PROVIDER_NODE_ID" 20202021 3000 \
         --paa-trust-store-path "${SDK_ROOT}/credentials/development/paa-root-certs" \
         >> "${LOG_DIR}/provider-commission.log" 2>&1 || true
 

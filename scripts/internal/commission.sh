@@ -5,9 +5,13 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HARNESS_ROOT="$(dirname "$SCRIPT_DIR")"
-SDK_ROOT="${MATTER_SDK_ROOT:-${HARNESS_ROOT}/connectedhomeip}"
-BUILD_DIR="${SDK_ROOT}/out/linux_x64"
+HARNESS_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+# Load central configuration
+source "$HARNESS_ROOT/setup.sh"
+
+SDK_ROOT="$MATTER_SDK_ROOT"
+BUILD_DIR="$MATTER_BUILD_DIR"
 CHIP_TOOL="${BUILD_DIR}/chip-tool"
 
 # Configuration
@@ -15,7 +19,7 @@ FABRIC_ID=1
 COMMISSIONER_NODE_ID=112233
 BASE_DISCRIMINATOR=3840
 BASE_PORT=5540
-SETUP_PIN=20202020
+SETUP_PIN=20202021
 
 usage() {
     cat <<EOF
@@ -95,13 +99,14 @@ commission_requestor() {
     echo "  Setup PIN: $SETUP_PIN"
     echo ""
 
-    # Commission via PASE
+    # Commission via PASE (capabilities 6 = network + OTA)
     echo "Running chip-tool pairing onnetwork..."
     "$CHIP_TOOL" pairing onnetwork "$node_id" "$SETUP_PIN" \
+        --capabilities 6 \
         --paa-trust-store-path "${SDK_ROOT}/credentials/development/paa-root-certs" \
         || {
             echo "ERROR: Commission failed for requestor $instance"
-            echo "Check that requestor is running: ./scripts/run-requestor.sh status"
+            echo "Check that requestor is running: ./scripts/internal/run-requestor.sh status"
             return 1
         }
 

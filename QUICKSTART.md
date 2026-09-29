@@ -20,7 +20,7 @@ cd /home/nchavady/workspace/github/iris/ota-test-harness
 ./scripts/make-ota-images.sh
 
 # 3. Run happy path test (~30 sec)
-./scripts/run-test.sh happy-path
+./scripts/internal/run-test.sh happy-path
 ```
 
 ## Expected Output
@@ -53,16 +53,16 @@ cd /home/nchavady/workspace/github/iris/ota-test-harness
 your-provider-app --discriminator 3000 --secured-device-port 5540
 
 # Start a requestor
-./scripts/run-requestor.sh start 1 --auto-apply
+./scripts/internal/run-requestor.sh start 1 --auto-apply
 
 # Commission it
-./scripts/commission.sh commission 1
+./scripts/internal/commission.sh commission 1
 
 # Setup ACLs on YOUR provider (use your provider's node ID)
-./scripts/commission.sh setup-provider-acl 0x1234
+./scripts/internal/commission.sh setup-provider-acl 0x1234
 
 # Wire requestor to YOUR provider
-./scripts/commission.sh wire-provider 1 0x1234 0
+./scripts/internal/commission.sh wire-provider 1 0x1234 0
 
 # Monitor
 tail -f logs/requestor-1.log
@@ -80,35 +80,35 @@ See [README.md](README.md) for:
 
 ```bash
 # View running requestors
-./scripts/run-requestor.sh status
+./scripts/internal/run-requestor.sh status
 
 # Stop all requestors
-./scripts/run-requestor.sh stop-all
+./scripts/internal/run-requestor.sh stop-all
 
 # Clean all state
-./scripts/run-requestor.sh clean-all
+./scripts/internal/run-requestor.sh clean-all
 
 # Run all tests
-./scripts/run-test.sh all
+./scripts/internal/run-test.sh all
 
 # Start 5 concurrent requestors
-./scripts/run-requestor.sh start-multi 5
-./scripts/commission.sh commission-multi 5
+./scripts/internal/run-requestor.sh start-multi 5
+./scripts/internal/commission.sh commission-multi 5
 ```
 
 ## Common Issues
 
 ### QueryImage returns UnsupportedAccess (0x580)
-→ ACLs not set. Run: `./scripts/commission.sh setup-provider-acl <PROVIDER_NODE_ID>`
+→ ACLs not set. Run: `./scripts/internal/commission.sh setup-provider-acl <PROVIDER_NODE_ID>`
 
 ### BDX transfer timeout
 → Check provider is running: `ps aux | grep ota-provider`
 
 ### Requestor won't commission
-→ Check discriminator/port match: `./scripts/run-requestor.sh status`
+→ Check discriminator/port match: `./scripts/internal/run-requestor.sh status`
 
 ### Stale state from previous run
-→ Clean: `./scripts/run-requestor.sh clean-all`
+→ Clean: `./scripts/internal/run-requestor.sh clean-all`
 
 ---
 

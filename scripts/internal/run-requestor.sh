@@ -5,9 +5,13 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HARNESS_ROOT="$(dirname "$SCRIPT_DIR")"
-SDK_ROOT="${MATTER_SDK_ROOT:-${HARNESS_ROOT}/connectedhomeip}"
-BUILD_DIR="${SDK_ROOT}/out/linux_x64"
+HARNESS_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+# Load central configuration
+source "$HARNESS_ROOT/setup.sh"
+
+SDK_ROOT="$MATTER_SDK_ROOT"
+BUILD_DIR="$MATTER_BUILD_DIR"
 REQUESTOR_BIN="${BUILD_DIR}/chip-ota-requestor-app"
 
 KVS_DIR="${HARNESS_ROOT}/kvs"
@@ -17,7 +21,7 @@ IMAGE_DIR="${HARNESS_ROOT}/images"
 # Configuration
 BASE_DISCRIMINATOR=3840
 BASE_PORT=5540
-BASE_VERSION=10
+BASE_VERSION="$CURRENT_VERSION"   # Compiled-in version of REQUESTOR_BIN (build-version.env)
 VENDOR_ID="0xFFF1"
 PRODUCT_ID="0x8000"
 
@@ -26,7 +30,7 @@ usage() {
 Usage: $0 <command> [options]
 
 Commands:
-  start <instance-id> [--auto-apply] [--user-consent <state>] [--periodic-query <sec>]
+  start <instance-id> [--auto-apply] [--skip-exec] [--user-consent <state>] [--periodic-query <sec>]
       Start a single requestor instance
 
   start-multi <count>
@@ -49,6 +53,8 @@ Commands:
 
 Options:
   --auto-apply             Apply image immediately after download
+  --skip-exec              Don't exec the downloaded image on apply; stay running and
+                           send NotifyUpdateApplied instead
   --user-consent <state>   User consent state: granted|denied|deferred
   --periodic-query <sec>   Periodic query timeout in seconds
   --download-path <path>   Custom download path (default: auto-generated)
@@ -109,6 +115,7 @@ start_requestor() {
 
     # Parse options
     local auto_apply=""
+    local skip_exec=""
     local user_consent=""
     local periodic_query=""
     local custom_download=""
@@ -117,6 +124,10 @@ start_requestor() {
         case $1 in
             --auto-apply)
                 auto_apply="--autoApplyImage"
+                shift
+                ;;
+            --skip-exec)
+                skip_exec="--skipExecImageFile"
                 shift
                 ;;
             --user-consent)
@@ -151,7 +162,7 @@ start_requestor() {
     echo "Starting requestor instance $instance:"
     echo "  Discriminator: $discriminator"
     echo "  Port: $port"
-    echo "  Version: $BASE_VERSION"
+    echo "  Software version: $BASE_VERSION (OTA target: $OTA_VERSION)"
     echo "  KVS: $kvs"
     echo "  Download: $download_path"
     echo "  Log: $log"
@@ -169,6 +180,7 @@ start_requestor() {
     )
 
     [ -n "$auto_apply" ] && cmd+=($auto_apply)
+    [ -n "$skip_exec" ] && cmd+=($skip_exec)
     [ -n "$user_consent" ] && cmd+=($user_consent)
     [ -n "$periodic_query" ] && cmd+=($periodic_query)
 
@@ -234,31 +246,65 @@ clean_requestor() {
 }
 
 show_status() {
-    echo "Running OTA Requestor Instances:"
+    echo "OTA Requestor Instances:"
     echo ""
-    printf "%-8s %-8s %-6s %-14s %-8s\n" "INSTANCE" "PID" "PORT" "DISCRIMINATOR" "STATUS"
-    echo "------------------------------------------------------------"
+    printf "%-8s %-8s %-6s %-14s %-12s %-20s\n" "INSTANCE" "PID" "PORT" "DISCRIMINATOR" "STATUS" "FABRIC STATE"
+    echo "--------------------------------------------------------------------------------"
 
-    local any_running=false
+    local any_found=false
+
+    # Check for instances with PID files (currently or recently running)
     for pid_file in "${HARNESS_ROOT}"/requestor-*.pid; do
         [ -f "$pid_file" ] || continue
-        any_running=true
+        any_found=true
 
         local instance=$(basename "$pid_file" .pid | sed 's/requestor-//')
         local pid=$(cat "$pid_file")
         local port=$(get_port "$instance")
         local discriminator=$(get_discriminator "$instance")
+        local kvs=$(get_kvs_file "$instance")
+        local status=""
+        local fabric_state=""
 
         if kill -0 "$pid" 2>/dev/null; then
-            printf "%-8s %-8s %-6s %-14s %-8s\n" "$instance" "$pid" "$port" "$discriminator" "RUNNING"
+            status="RUNNING"
         else
-            printf "%-8s %-8s %-6s %-14s %-8s\n" "$instance" "$pid" "$port" "$discriminator" "DEAD"
+            status="DEAD"
             rm -f "$pid_file"
         fi
+
+        # Check if commissioned (KVS exists)
+        if [ -f "$kvs" ]; then
+            fabric_state="Commissioned"
+        else
+            fabric_state="Not commissioned"
+        fi
+
+        printf "%-8s %-8s %-6s %-14s %-12s %-20s\n" "$instance" "$pid" "$port" "$discriminator" "$status" "$fabric_state"
     done
 
-    if [ "$any_running" = false ]; then
-        echo "No requestor instances running"
+    # Check for instances that have KVS but no PID file (stopped but commissioned)
+    for kvs_file in "${KVS_DIR}"/requestor-*.kvs; do
+        [ -f "$kvs_file" ] || continue
+
+        local instance=$(basename "$kvs_file" .kvs | sed 's/requestor-//')
+        local pid_file=$(get_pid_file "$instance")
+
+        # Skip if already shown above
+        [ -f "$pid_file" ] && continue
+
+        any_found=true
+        local port=$(get_port "$instance")
+        local discriminator=$(get_discriminator "$instance")
+
+        printf "%-8s %-8s %-6s %-14s %-12s %-20s\n" "$instance" "-" "$port" "$discriminator" "STOPPED" "Commissioned"
+    done
+
+    if [ "$any_found" = false ]; then
+        echo "No requestor instances found"
+        echo ""
+        echo "To start a new instance:"
+        echo "  ./scripts/start-ota-end-node.sh start <instance-id>"
     fi
 }
 

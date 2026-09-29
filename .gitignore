@@ -33,3 +33,6 @@ __pycache__/
 !images/.gitkeep
 !logs/.gitkeep
 !kvs/.gitkeep
+
+# Versions recorded by build-setup.sh
+build-version.env

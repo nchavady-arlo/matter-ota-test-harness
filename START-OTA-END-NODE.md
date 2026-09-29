@@ -42,7 +42,7 @@ This guide is for testing **your own Matter controller/OTA provider** implementa
 ### Step 1: Start Simulated Requestor in Pairing Mode
 
 ```bash
-./scripts/test-your-provider.sh start 1
+./scripts/start-ota-end-node.sh start 1
 ```
 
 **Output:**
@@ -53,19 +53,33 @@ Starting Simulated OTA Requestor
 Instance: 1
 Discriminator: 3841
 Port: 5541
-Setup PIN: 20202020
+Setup PIN: 20202021
 
 The requestor is now in PAIRING MODE.
 
 Next steps:
   1. Use YOUR controller to commission this device
   2. Configure YOUR controller to serve OTA updates
-  3. Monitor progress: ./scripts/test-your-provider.sh monitor 1
+  3. Monitor progress: ./scripts/start-ota-end-node.sh monitor 1
 
-✓ Requestor started and waiting for commissioning
+Waiting for YOUR controller to commission this device...
+(Ctrl+C to stop waiting; the requestor keeps running)
+
+  ... still waiting for commissioning (10s elapsed)
+  ... still waiting for commissioning (20s elapsed)
+✓ Commissioning completed
+
+Device is now on your fabric. Continue the OTA flow from YOUR
+controller/provider — no further harness steps are needed.
+
+To monitor OTA progress:
+  ./scripts/start-ota-end-node.sh monitor 1
 ```
 
-The simulated device is now **discoverable** and waiting for commissioning.
+The command **blocks** until your controller commissions the device (up to
+10 minutes by default), then hands off — everything after that (ACLs,
+`AnnounceOTAProvider`/`DefaultOTAProviders`, the OTA flow itself) is driven
+entirely by YOUR controller/provider.
 
 ### Step 2: Commission from YOUR Controller
 
@@ -76,7 +90,7 @@ The simulated device is now **discoverable** and waiting for commissioning.
    - Or scan QR code / manual pairing code
 
 2. **Commission the device:**
-   - Setup PIN: **20202020**
+   - Setup PIN: **20202021**
    - Your controller should discover it via mDNS/BLE
    - Complete commissioning flow
 
@@ -122,7 +136,7 @@ The simulated device is now **discoverable** and waiting for commissioning.
 In another terminal:
 
 ```bash
-./scripts/test-your-provider.sh monitor 1
+./scripts/start-ota-end-node.sh monitor 1
 ```
 
 **You should see:**
@@ -157,7 +171,7 @@ tail -f logs/requestor-1.log
 ### Step 6: Clean Up
 
 ```bash
-./scripts/test-your-provider.sh clean 1
+./scripts/start-ota-end-node.sh clean 1
 ```
 
 ---
@@ -168,9 +182,9 @@ Test concurrent OTA updates:
 
 ```bash
 # Start 3 requestors
-./scripts/test-your-provider.sh start 1
-./scripts/test-your-provider.sh start 2
-./scripts/test-your-provider.sh start 3
+./scripts/start-ota-end-node.sh start 1
+./scripts/start-ota-end-node.sh start 2
+./scripts/start-ota-end-node.sh start 3
 
 # Commission each from YOUR controller:
 # - Instance 1: Discriminator 3841, Port 5541
@@ -178,12 +192,12 @@ Test concurrent OTA updates:
 # - Instance 3: Discriminator 3843, Port 5543
 
 # Monitor each
-./scripts/test-your-provider.sh monitor 1  # Terminal 1
-./scripts/test-your-provider.sh monitor 2  # Terminal 2
-./scripts/test-your-provider.sh monitor 3  # Terminal 3
+./scripts/start-ota-end-node.sh monitor 1  # Terminal 1
+./scripts/start-ota-end-node.sh monitor 2  # Terminal 2
+./scripts/start-ota-end-node.sh monitor 3  # Terminal 3
 
 # Check status
-./scripts/test-your-provider.sh status
+./scripts/start-ota-end-node.sh status
 ```
 
 ---
@@ -218,7 +232,7 @@ images/test-downgrade.ota
 **Symptom:** Your controller can't find the simulated device
 
 **Fixes:**
-- Check requestor is running: `./scripts/test-your-provider.sh status`
+- Check requestor is running: `./scripts/start-ota-end-node.sh status`
 - Verify discriminator: should be 3840 + instance number
 - Check network connectivity (same subnet)
 - Look for mDNS advertisements: `avahi-browse -a`
@@ -287,19 +301,19 @@ images/test-downgrade.ota
 
 ```bash
 # Start requestor in pairing mode
-./scripts/test-your-provider.sh start 1
+./scripts/start-ota-end-node.sh start 1
 
 # Commission from YOUR controller
-# Discriminator: 3841, PIN: 20202020
+# Discriminator: 3841, PIN: 20202021
 
 # Monitor OTA progress
-./scripts/test-your-provider.sh monitor 1
+./scripts/start-ota-end-node.sh monitor 1
 
 # Check status
-./scripts/test-your-provider.sh status
+./scripts/start-ota-end-node.sh status
 
 # Clean up
-./scripts/test-your-provider.sh clean 1
+./scripts/start-ota-end-node.sh clean 1
 ```
 
 **The simulated requestor is now a test device for validating YOUR OTA provider!** 🎯

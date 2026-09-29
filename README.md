@@ -61,7 +61,7 @@ cd /home/nchavady/workspace/github/iris/ota-test-harness
 ### 3. Run Test Scenario
 
 ```bash
-./scripts/run-test.sh happy-path
+./scripts/internal/run-test.sh happy-path
 ```
 
 **What this does:**
@@ -92,11 +92,11 @@ cd /home/nchavady/workspace/github/iris/ota-test-harness
 
 | Scenario | Command | What It Tests |
 |----------|---------|---------------|
-| **Happy Path** | `./scripts/run-test.sh happy-path` | Full update: QueryImage → Download → Apply → NotifyUpdateApplied |
-| **Provider Busy** | `./scripts/run-test.sh provider-busy` | Provider returns Busy, requestor honors `delayedActionTime` (30s) |
-| **BDX Interrupted** | `./scripts/run-test.sh bdx-interrupted` | Provider killed mid-transfer, requestor detects failure and resets |
-| **Concurrent Updates** | `./scripts/run-test.sh concurrent-updates` | 3 requestors query simultaneously, tests provider concurrency |
-| **All Tests** | `./scripts/run-test.sh all` | Run all scenarios sequentially |
+| **Happy Path** | `./scripts/internal/run-test.sh happy-path` | Full update: QueryImage → Download → Apply → NotifyUpdateApplied |
+| **Provider Busy** | `./scripts/internal/run-test.sh provider-busy` | Provider returns Busy, requestor honors `delayedActionTime` (30s) |
+| **BDX Interrupted** | `./scripts/internal/run-test.sh bdx-interrupted` | Provider killed mid-transfer, requestor detects failure and resets |
+| **Concurrent Updates** | `./scripts/internal/run-test.sh concurrent-updates` | 3 requestors query simultaneously, tests provider concurrency |
+| **All Tests** | `./scripts/internal/run-test.sh all` | Run all scenarios sequentially |
 
 ---
 
@@ -123,19 +123,19 @@ your-provider-app \
 
 ```bash
 # Clean state
-./scripts/run-requestor.sh clean-all
+./scripts/internal/run-requestor.sh clean-all
 
 # Start requestor
-./scripts/run-requestor.sh start 1 --auto-apply
+./scripts/internal/run-requestor.sh start 1 --auto-apply
 
 # Commission it
-./scripts/commission.sh commission 1
+./scripts/internal/commission.sh commission 1
 
 # Setup ACLs on YOUR provider
-./scripts/commission.sh setup-provider-acl <YOUR_PROVIDER_NODE_ID>
+./scripts/internal/commission.sh setup-provider-acl <YOUR_PROVIDER_NODE_ID>
 
 # Wire requestor to YOUR provider
-./scripts/commission.sh wire-provider 1 <YOUR_PROVIDER_NODE_ID> 0
+./scripts/internal/commission.sh wire-provider 1 <YOUR_PROVIDER_NODE_ID> 0
 
 # Monitor logs
 tail -f logs/requestor-1.log
@@ -160,41 +160,41 @@ cd /home/nchavady/workspace/github/connectedhomeip
 
 ```bash
 # Start 5 requestor instances (IDs 1-5)
-./scripts/run-requestor.sh start-multi 5
+./scripts/internal/run-requestor.sh start-multi 5
 
 # Commission all 5
-./scripts/commission.sh commission-multi 5
+./scripts/internal/commission.sh commission-multi 5
 
 # Setup provider ACLs (once)
-./scripts/commission.sh setup-provider-acl 0x1234
+./scripts/internal/commission.sh setup-provider-acl 0x1234
 
 # Wire all to provider
 for i in {1..5}; do
-    ./scripts/commission.sh wire-provider $i 0x1234 0
+    ./scripts/internal/commission.sh wire-provider $i 0x1234 0
 done
 
 # Check status
-./scripts/run-requestor.sh status
+./scripts/internal/run-requestor.sh status
 ```
 
 ### Custom Requestor Options
 
 ```bash
 # Require user consent
-./scripts/run-requestor.sh start 1 --user-consent denied
+./scripts/internal/run-requestor.sh start 1 --user-consent denied
 
 # Set periodic query timeout (auto-retry every 60 seconds)
-./scripts/run-requestor.sh start 2 --periodic-query 60
+./scripts/internal/run-requestor.sh start 2 --periodic-query 60
 
 # Custom download path
-./scripts/run-requestor.sh start 3 --download-path /tmp/my-ota.bin
+./scripts/internal/run-requestor.sh start 3 --download-path /tmp/my-ota.bin
 ```
 
 ### Using DefaultOTAProviders Attribute (Periodic Polling)
 
 ```bash
 # Instead of AnnounceOTAProvider (immediate), use attribute for periodic polling
-./scripts/commission.sh wire-provider-attribute 1 0x1234 0
+./scripts/internal/commission.sh wire-provider-attribute 1 0x1234 0
 
 # Requestor will query provider based on --periodicQueryTimeout
 # Default: 24 hours (configure with --periodic-query flag)
@@ -246,7 +246,7 @@ Received QueryImage failure response: 0x00000580 (UnsupportedAccess)
 chip-tool basicinformation read vendor-id <PROVIDER_NODE_ID> 0
 
 # Install correct ACL (run from test harness root)
-./scripts/commission.sh setup-provider-acl <PROVIDER_NODE_ID>
+./scripts/internal/commission.sh setup-provider-acl <PROVIDER_NODE_ID>
 ```
 
 **Critical ACL requirement:**
@@ -373,12 +373,12 @@ python3 /home/nchavady/workspace/github/connectedhomeip/src/app/ota_image_tool.p
 **Test YOUR provider's concurrency:**
 ```bash
 # Launch 10 requestors against YOUR provider
-./scripts/run-requestor.sh start-multi 10
-./scripts/commission.sh commission-multi 10
-./scripts/commission.sh setup-provider-acl <YOUR_PROVIDER_NODE_ID>
+./scripts/internal/run-requestor.sh start-multi 10
+./scripts/internal/commission.sh commission-multi 10
+./scripts/internal/commission.sh setup-provider-acl <YOUR_PROVIDER_NODE_ID>
 
 for i in {1..10}; do
-    ./scripts/commission.sh wire-provider $i <YOUR_PROVIDER_NODE_ID> 0 &
+    ./scripts/internal/commission.sh wire-provider $i <YOUR_PROVIDER_NODE_ID> 0 &
 done
 
 # Monitor which ones succeed
@@ -416,10 +416,10 @@ grep "execv\|boot.*new.*image" logs/requestor-1.log
 **Fix:**
 ```bash
 # Full cleanup
-./scripts/run-requestor.sh clean-all
+./scripts/internal/run-requestor.sh clean-all
 
 # Clean specific instance
-./scripts/run-requestor.sh clean 1
+./scripts/internal/run-requestor.sh clean 1
 
 # Also clean provider KVS
 rm -f /tmp/chip_kvs_provider
@@ -456,22 +456,26 @@ Use these patterns to parse logs programmatically:
 
 ```
 ota-test-harness/
-├── README.md                    # This file
-├── build-setup.sh               # One-time build script
+├── README.md                         # This file
+├── START-OTA-END-NODE.md             # Bring-your-controller workflow guide
+├── build-setup.sh                    # One-time build script
 ├── scripts/
-│   ├── make-ota-images.sh           # Generate test OTA images
-│   ├── run-requestor.sh         # Launch/stop requestor instances
-│   ├── commission.sh            # Commission + wire provider
-│   └── run-test.sh              # Test scenario runner
-├── images/                      # Generated .ota files
+│   ├── start-ota-end-node.sh         # Start simulated OTA Requestor for YOUR controller
+│   ├── make-ota-images.sh            # Generate test OTA images
+│   └── internal/
+│       ├── run-requestor.sh          # Launch/stop requestor instances
+│       ├── commission.sh             # Commission + wire provider
+│       ├── commission-ble.sh         # BLE-based commissioning
+│       └── run-test.sh               # Test scenario runner
+├── images/                           # Generated .ota files
 │   ├── test-normal.ota
 │   ├── test-large.ota
 │   ├── test-corrupted.ota
-│   └── image-list.json          # Manifest for reference provider
-├── kvs/                         # Persistent storage per requestor
+│   └── image-list.json               # Manifest for reference provider
+├── kvs/                              # Persistent storage per requestor
 │   ├── requestor-1.kvs
 │   └── requestor-N.kvs
-└── logs/                        # Log files per instance
+└── logs/                             # Log files per instance
     ├── requestor-1.log
     ├── requestor-N.log
     └── provider.log
@@ -513,7 +517,7 @@ ota-test-harness/
 
 3. Verify tests still pass:
    ```bash
-   ./scripts/run-test.sh all
+   ./scripts/internal/run-test.sh all
    ```
 
 **No code patches to maintain** — unmodified app approach means zero rebase pain.
@@ -531,12 +535,12 @@ When a test fails, determine if the bug is in:
 
 ```bash
 # Test with YOUR provider
-./scripts/commission.sh setup-provider-acl <YOUR_NODE_ID>
-./scripts/commission.sh wire-provider 1 <YOUR_NODE_ID> 0
+./scripts/internal/commission.sh setup-provider-acl <YOUR_NODE_ID>
+./scripts/internal/commission.sh wire-provider 1 <YOUR_NODE_ID> 0
 # Observe failure
 
 # Test with reference provider (control)
-./scripts/run-test.sh happy-path
+./scripts/internal/run-test.sh happy-path
 # If this passes → bug is in YOUR provider
 # If this also fails → bug is in harness or SDK
 ```
@@ -565,28 +569,28 @@ When a test fails, determine if the bug is in:
    ```bash
    ./build-setup.sh
    ./scripts/make-ota-images.sh
-   ./scripts/run-test.sh all
+   ./scripts/internal/run-test.sh all
    ```
 
 2. **Integrate YOUR provider:**
    - Start your provider
    - Note its node ID
-   - Run: `./scripts/commission.sh setup-provider-acl <YOUR_NODE_ID>`
-   - Run: `./scripts/commission.sh wire-provider 1 <YOUR_NODE_ID> 0`
+   - Run: `./scripts/internal/commission.sh setup-provider-acl <YOUR_NODE_ID>`
+   - Run: `./scripts/internal/commission.sh wire-provider 1 <YOUR_NODE_ID> 0`
    - Monitor: `tail -f logs/requestor-1.log`
 
 3. **Add custom test scenarios:**
-   - Edit `scripts/run-test.sh`
+   - Edit `scripts/internal/run-test.sh`
    - Add new test functions following existing patterns
    - Use `wait_for_log_pattern()` for assertions
 
 4. **Stress test YOUR provider:**
    ```bash
-   ./scripts/run-requestor.sh start-multi 10
-   ./scripts/commission.sh commission-multi 10
-   ./scripts/commission.sh setup-provider-acl <YOUR_NODE_ID>
+   ./scripts/internal/run-requestor.sh start-multi 10
+   ./scripts/internal/commission.sh commission-multi 10
+   ./scripts/internal/commission.sh setup-provider-acl <YOUR_NODE_ID>
    for i in {1..10}; do
-       ./scripts/commission.sh wire-provider $i <YOUR_NODE_ID> 0 &
+       ./scripts/internal/commission.sh wire-provider $i <YOUR_NODE_ID> 0 &
    done
    ```
 
@@ -601,7 +605,7 @@ When a test fails, determine if the bug is in:
 
 **Harness Issues:**
 - Check logs in `logs/` directory
-- Enable verbose mode: `./scripts/run-test.sh happy-path --verbose`
+- Enable verbose mode: `./scripts/internal/run-test.sh happy-path --verbose`
 - Review troubleshooting section above
 
 **SDK Issues:**
