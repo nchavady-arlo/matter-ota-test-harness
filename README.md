@@ -50,9 +50,9 @@ cd /home/nchavady/workspace/github/iris/ota-test-harness
 ```
 
 **Generated images:**
-- `test-normal.ota` (100 KB) — baseline happy path
-- `test-small.ota` (1 KB) — fast iteration
-- `test-large.ota` (5 MB) — BDX stress test
+All payloads are the v(N+1) requestor binary, stripped of debug info (~2 MB).
+- `test-normal.ota` — baseline happy path (vN → vN+1)
+- `test-small.ota` / `test-large.ota` — copies of `test-normal.ota` (legacy names)
 - `test-corrupted.ota` — digest validation failure
 - `test-wrong-vid.ota` — VID/PID mismatch
 - `test-downgrade.ota` — downgrade attempt
@@ -186,9 +186,23 @@ done
 # Set periodic query timeout (auto-retry every 60 seconds)
 ./scripts/internal/run-requestor.sh start 2 --periodic-query 60
 
-# Custom download path
+# Custom download path (keep it on the same filesystem as /tmp: on apply the SDK
+# rename()s it to /tmp/ota.update, which fails across filesystems)
 ./scripts/internal/run-requestor.sh start 3 --download-path /tmp/my-ota.bin
 ```
+
+Notes:
+- `/tmp/ota.update` is one path shared by every instance, so only one
+  requestor can apply at a time. Downloads live in `/tmp` and are lost on reboot.
+- `/tmp` must not be mounted `noexec`, or the apply (exec) step fails.
+- With `--skip-exec` the requestor keeps running the old binary, so
+  NotifyUpdateApplied and the SoftwareVersion attribute still report the *old*
+  version. That exercises the provider's protocol handling, not a real upgrade.
+- `start-ota-end-node.sh resume` always relaunches the v`$CURRENT_VERSION` build.
+  After a successful apply, that downgrades the device (the script warns).
+- Requestor logs are appended across restarts (`clean` removes them).
+- On a shared host, other users can replace `/tmp/ota.update` before it is
+  exec'd. Only use this harness on a machine you trust.
 
 ### Using DefaultOTAProviders Attribute (Periodic Polling)
 
@@ -306,10 +320,10 @@ Digest mismatch
 python3 /home/nchavady/workspace/github/connectedhomeip/src/app/ota_image_tool.py show images/test-normal.ota
 
 # Check downloaded file
-ls -lh images/downloaded-1.bin
+ls -lh /tmp/ota-requestor-1.bin
 
 # Compare digest
-sha256sum images/test-normal.ota images/downloaded-1.bin
+sha256sum images/test-normal.ota /tmp/ota-requestor-1.bin
 ```
 
 ### 4. Requestor Stuck in kQuerying State
@@ -552,7 +566,7 @@ When a test fails, determine if the bug is in:
 **Tested Configuration:**
 - **Platform:** aarch64, 4 cores, 8 GB RAM
 - **Max concurrent requestors:** 10 (tested)
-- **Large image (5 MB) download time:** ~8 seconds with reference provider
+- **Image download time:** depends on the provider's BDX block rate (a 5 MB image took ~150 s against one provider); keep payloads stripped
 - **Commission time:** ~3 seconds per requestor
 
 **Scaling:**

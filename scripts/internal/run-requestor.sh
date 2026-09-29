@@ -16,7 +16,12 @@ REQUESTOR_BIN="${BUILD_DIR}/chip-ota-requestor-app"
 
 KVS_DIR="${HARNESS_ROOT}/kvs"
 LOG_DIR="${HARNESS_ROOT}/logs"
-IMAGE_DIR="${HARNESS_ROOT}/images"
+# Downloads go in /tmp: on apply the SDK rename()s the image to /tmp/ota.update,
+# and rename() fails across filesystems.
+# The exec path is shared by all instances (only one can apply at a time), and
+# /tmp is usually cleared on reboot, so downloads don't survive one.
+DOWNLOAD_DIR="/tmp"
+EXEC_PATH="/tmp/ota.update"   # kImageExecPath in the SDK; left behind after apply
 
 # Configuration
 BASE_DISCRIMINATOR=3840
@@ -57,7 +62,7 @@ Options:
                            send NotifyUpdateApplied instead
   --user-consent <state>   User consent state: granted|denied|deferred
   --periodic-query <sec>   Periodic query timeout in seconds
-  --download-path <path>   Custom download path (default: auto-generated)
+  --download-path <path>   Custom download path (default: /tmp/ota-requestor-<instance>.bin)
 
 Examples:
   $0 start 1                                    # Start requestor 1
@@ -99,7 +104,7 @@ get_kvs_file() {
 
 get_download_path() {
     local instance=$1
-    echo "${IMAGE_DIR}/downloaded-${instance}.bin"
+    echo "${DOWNLOAD_DIR}/ota-requestor-${instance}.bin"
 }
 
 start_requestor() {
@@ -184,8 +189,10 @@ start_requestor() {
     [ -n "$user_consent" ] && cmd+=($user_consent)
     [ -n "$periodic_query" ] && cmd+=($periodic_query)
 
-    # Launch in background
-    "${cmd[@]}" > "$log" 2>&1 &
+    # Launch in background. Append, so a resume keeps the previous run's log
+    # (`clean` removes it); the marker separates runs.
+    echo "===== run-requestor.sh: starting instance $instance at $(date '+%F %T') =====" >> "$log"
+    "${cmd[@]}" >> "$log" 2>&1 &
     local pid=$!
     echo "$pid" > "$pid_file"
 
@@ -241,7 +248,8 @@ clean_requestor() {
     local download=$(get_download_path "$instance")
 
     echo "Cleaning requestor $instance:"
-    rm -f "$kvs" "$log" "$download"
+    # A running re-exec'd requestor keeps its inode, so removing EXEC_PATH is safe
+    rm -f "$kvs" "$log" "$download" "$EXEC_PATH"
     echo "✓ Removed KVS, log, and download files"
 }
 
@@ -308,6 +316,16 @@ show_status() {
     fi
 }
 
+# Instance ids become ports, discriminators and file names
+case "${1:-}" in
+    start|stop|clean|start-multi)
+        if [ -n "${2:-}" ] && ! [[ "$2" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: instance must be a number (got: $2)"
+            exit 1
+        fi
+        ;;
+esac
+
 # Main command dispatch
 case "${1:-}" in
     start)
@@ -340,7 +358,9 @@ case "${1:-}" in
         clean_requestor "$2"
         ;;
     clean-all)
-        rm -rf "$KVS_DIR"/* "$LOG_DIR"/* "${IMAGE_DIR}"/downloaded-*.bin
+        # Guard the globs: an empty dir var would expand to /*
+        [ -n "$KVS_DIR" ] && [ -n "$LOG_DIR" ] && [ -n "$DOWNLOAD_DIR" ] || { echo "ERROR: empty path config"; exit 1; }
+        rm -rf "${KVS_DIR:?}"/* "${LOG_DIR:?}"/* "${DOWNLOAD_DIR:?}"/ota-requestor-*.bin "$EXEC_PATH"
         echo "✓ Cleaned all KVS files, logs, and downloads"
         ;;
     status)

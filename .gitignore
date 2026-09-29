@@ -2,7 +2,6 @@
 images/*.ota
 images/*.bin
 images/*.txt
-images/downloaded-*.bin
 
 # Generated image manifest
 images/image-list.json

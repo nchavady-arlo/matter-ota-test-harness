@@ -165,7 +165,7 @@ tail -f logs/requestor-1.log
 | `QueryImageResponse: status: 0` | Provider has update available |
 | `BDX transfer` | File download started |
 | `Download complete` | Full image transferred |
-| `ApplyUpdateResponse: action: 0` | Provider approved application |
+| `ApplyUpdateResponse:` then `action: 0` (next line) | Provider approved application |
 | `NotifyUpdateApplied` | Requestor confirmed successful update |
 
 ### Step 6: Clean Up

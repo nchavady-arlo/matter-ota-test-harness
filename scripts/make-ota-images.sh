@@ -47,12 +47,14 @@ mkdir -p "$IMAGE_DIR"
 # Clean previous images
 rm -f "$IMAGE_DIR"/*.ota "$IMAGE_DIR"/*.bin "$IMAGE_DIR"/*.txt
 
-# Stage the v(N+1) requestor binary as the payload
+# Stage the v(N+1) requestor binary as the payload, stripped of debug info and
+# symbols (~91MB → ~2MB) so BDX transfers finish in seconds, not tens of minutes.
+# The unstripped build in $MATTER_OTA_BUILD_DIR is left intact for debugging.
 stage_payload() {
     local name=$1
     local output="${IMAGE_DIR}/${name}.bin"
 
-    cp "$OTA_PAYLOAD_BIN" "$output"
+    strip --strip-all -o "$output" "$OTA_PAYLOAD_BIN"
     echo "chip-ota-requestor-app v${TARGET_VERSION}" > "${IMAGE_DIR}/${name}.txt"
 }
 
@@ -115,9 +117,14 @@ echo "✓ test-wrong-vid.ota (VID=0xFFF2, PID=0x8001, should be rejected by prov
 echo ""
 
 echo "=== 4. Min Applicable Version Rejection ==="
-create_ota_image "requestor" "test-min-version.ota" "$TARGET_VERSION" "$TARGET_VERSION_STR" "$((BASE_VERSION + 5))"
-echo "✓ test-min-version.ota (minApplicableVersion=$((BASE_VERSION + 5)) > current=$BASE_VERSION)"
-echo "  Provider should return NotAvailable if requestor reports version < $((BASE_VERSION + 5))"
+# ota_image_tool requires minApplicableVersion < image version, and nothing fits
+# between current (N) and target (N+1), so this rejection image gets a higher
+# header version. It should never be applied, so the payload version is moot.
+MIN_VERSION=$((BASE_VERSION + 2))
+MIN_IMAGE_VERSION=$((BASE_VERSION + 5))
+create_ota_image "requestor" "test-min-version.ota" "$MIN_IMAGE_VERSION" "$MIN_IMAGE_VERSION.0" "$MIN_VERSION"
+echo "✓ test-min-version.ota (v$MIN_IMAGE_VERSION, minApplicableVersion=$MIN_VERSION > current=$BASE_VERSION)"
+echo "  Provider should return NotAvailable if requestor reports version < $MIN_VERSION"
 echo ""
 
 if [ "$BASE_VERSION" -gt 0 ]; then

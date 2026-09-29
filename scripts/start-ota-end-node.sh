@@ -97,20 +97,52 @@ get_node_id() {
     printf "0x%X" $((0x100 + instance))
 }
 
-# Tail the requestor log, filtered to OTA events. Announces the running software
-# version whenever the (re-exec'd) requestor confirms its image.
+# Was this instance's requestor started with --skip-exec? Read from the running
+# process so `monitor` reports the real apply mode, not its own CLI flags.
+requestor_skip_exec() {
+    local instance=$1
+    local pid_file="${HARNESS_ROOT}/requestor-${instance}.pid"
+    local pid
+    pid=$(cat "$pid_file" 2>/dev/null) || return 0
+    if tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q -- '--skipExecImageFile'; then
+        echo "--skip-exec"
+    fi
+}
+
+# Tail the requestor log, filtered to OTA events, and announce each OTA stage:
+# update offered → download progress → image received → applying → result.
 follow_ota_log() {
     local log_file=$1
-    local extra_pattern=${2:-}
-    local pattern="QueryImage|BDX|Download|Apply|Update|software version|ota.update|Starting event loop|ERROR|WARN"
+    local instance=$2
+    local skip_exec=$3
+    local extra_pattern=${4:-}
+    local pid_file="${HARNESS_ROOT}/requestor-${instance}.pid"
+    local pattern="QueryImage|ApplyUpdate|NotifyUpdate|software version|ota.update|Starting event loop"
     [ -n "$extra_pattern" ] && pattern="${extra_pattern}|${pattern}"
 
     # The SDK only logs the software version on a confirm *failure*. So:
     #   "Update available from version X to Y" → remember X/Y
     #   "Starting event loop" after that       → process re-exec'd into the new image
     #   no "Failed to confirm image" within 3s → image confirmed, now running Y
-    tail -n 0 -F "$log_file" 2>/dev/null | sed -u 's/\x1b\[[0-9;]*m//g' | \
-        awk -v pat="$pattern" '
+    # The log goes quiet after a successful confirm, so a once-a-second heartbeat
+    # ("@@TICK <alive>") is merged into the stream to drive that 3s check and to
+    # notice the requestor process exiting.
+    {
+        tail -n 0 -F "$log_file" 2>/dev/null | sed -u 's/\x1b\[[0-9;]*m//g' &
+        while sleep 1; do
+            if kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
+                echo "@@TICK 1"
+            else
+                echo "@@TICK 0"
+            fi
+        done
+    } | awk -v pat="$pattern" -v status="$SCRIPT_DIR/internal/ota-status.sh" \
+            -v inst="$instance" -v skip="$skip_exec" '
+        BEGIN {
+            from = "?"; target = "?"; alive = -1
+            qstatus[0] = "UpdateAvailable"; qstatus[1] = "Busy"
+            qstatus[2] = "NotAvailable"; qstatus[3] = "DownloadProtocolNotSupported"
+        }
         function ts(line) {
             if (match(line, /^\[[0-9]+\.[0-9]+\]/)) return substr(line, 2, RLENGTH - 2) + 0
             return 0
@@ -120,32 +152,120 @@ follow_ota_log() {
             print "=================================================="
             print msg
             print "=================================================="
+            fflush()
+        }
+        function shq(str) {
+            gsub(/\047/, "\047\\\047\047", str)
+            return "\047" str "\047"
+        }
+        function run(what, path) {
+            system(shq(status) " " what " " shq(inst) " " shq(path) " " skip)
             print ""
             fflush()
         }
+        function confirmed() {
+            done = 1
+            banner("✓ OTA APPLIED — software version v" from " → v" target " (now running v" target ")")
+        }
+        /^@@TICK / {
+            if (restarted && !done && t_wall > 0 && systime() > t_wall + 3) confirmed()
+            if ($2 == 0 && alive != 0) {
+                if (alive == 1) banner("✗ REQUESTOR PROCESS EXITED — check the log above; resume with: ./scripts/start-ota-end-node.sh resume " inst)
+                else { print ">> Requestor " inst " is not running (waiting for it to start)"; fflush() }
+            } else if ($2 == 1 && alive == 0) { print ">> Requestor " inst " is running"; fflush() }
+            alive = $2
+            next
+        }
+        # Per-message BDX chatter (one SendMessage per block) is summarized as progress
+        /BDX::SendMessage/ {
+            msgs++
+            if (msgs == 1) { print ">> Download started (v" target ")"; fflush() }
+            else if (msgs % 500 == 0) { printf "   ... downloading: %d BDX messages\n", msgs; fflush() }
+            next
+        }
+        # Field lines ("  status: 1") that follow a QueryImageResponse:/ApplyUpdateResponse:
+        # header. Any other line ends the block.
+        fields != "" && !/\]   [A-Za-z]+: / { fields = "" }
         $0 ~ pat { print; fflush() }
+        /QueryImageResponse:/ { fields = "query"; next }
+        /ApplyUpdateResponse:/ { fields = "apply"; next }
+        fields == "query" && /\]   status: [0-9]+/ {
+            match($0, /status: [0-9]+/); q = substr($0, RSTART + 8, RLENGTH - 8) + 0
+            if (q != 0) banner(">> Provider replied: " (q in qstatus ? qstatus[q] : "status " q))
+            next
+        }
+        fields != "" && /delayedActionTime: [0-9]+ seconds/ {
+            match($0, /delayedActionTime: [0-9]+/); d = substr($0, RSTART + 19, RLENGTH - 19) + 0
+            if (fields == "query" && q != 0) print "   delayedActionTime: " d " s (requestor retries after this)"
+            if (fields == "apply" && a == 1)
+                print "   delayedActionTime: " d " s (the SDK waits at least 120 s before re-sending ApplyUpdate)"
+            else if (fields == "apply" && d > 0)
+                print "   delayedActionTime: " d " s"
+            fflush()
+            next
+        }
+        fields == "apply" && /\]   action: [0-9]+/ {
+            match($0, /action: [0-9]+/); a = substr($0, RSTART + 8, RLENGTH - 8) + 0
+            if (a == 0 && skip != "")
+                banner(">> Provider says PROCEED — --skip-exec: not executing image, staying on v" from)
+            else if (a == 0)
+                banner(">> APPLYING IMAGE: v" from " → v" target " (restarting into new image...)")
+            else if (a == 1)
+                banner(">> Provider says AWAIT NEXT ACTION — apply delayed")
+            else
+                banner(">> Provider says DISCONTINUE — update cancelled")
+            next
+        }
         /Update available from version [0-9]+ to [0-9]+/ {
             match($0, /from version [0-9]+ to [0-9]+/)
             split(substr($0, RSTART, RLENGTH), f, " ")
             from = f[3]; target = f[5]
+            # New attempt: forget any previous download/apply/confirm
+            msgs = 0; restarted = 0; done = 0; t_restart = 0; t_wall = 0; download = ""
             banner(">> Update available: v" from " → v" target)
         }
-        /Starting event loop/ && target != "" && !restarted {
-            restarted = 1; t_restart = ts($0)
-            banner(">> Requestor re-exec'"'"'d into downloaded image, confirming v" target "...")
+        /BDX transfer timeout/ {
+            banner("✗ DOWNLOAD TIMED OUT after " msgs " BDX messages — requestor will query again later")
+            msgs = 0
+        }
+        # SDK errors that end an OTA attempt (log severity is only in ANSI color,
+        # and most red lines are unrelated noise, so match the messages themselves)
+        /Image does not contain a valid header|BDX StatusReport|TransferSession error|Transfer timed out|failed to prepare download|Cannot (set|copy) block data|Failed to start download|Failed to send ApplyUpdate|Failed to send QueryImage|Failed to connect to node|Received QueryImage failure response|QueryImageResponse contains invalid fields|Watchdog timer detects state stuck/ {
+            print; fflush()
+            m = $0; sub(/^(\[[^]]*\] *)+/, "", m)
+            banner("✗ OTA ERROR: " m)
+            msgs = 0
+        }
+        /OTA image downloaded to / {
+            print; fflush()
+            download = $0; sub(/.*OTA image downloaded to /, "", download)
+            banner("✓ IMAGE RECEIVED: v" target " (" msgs " BDX messages)")
+            run("received", download)
+        }
+        /The OTA image is invalid/ {
+            banner("✗ APPLY FAILED: could not start v" target " image (execv failed)")
+            run("apply-failed", download)
+        }
+        /Starting event loop/ && target != "?" && !restarted {
+            restarted = 1; t_restart = ts($0); t_wall = systime()
+            banner(">> Requestor re-exec\047d into downloaded image, confirming v" target "...")
             next
         }
-        /Failed to confirm image|Current software version = / && restarted && !done {
+        # Not gated on a seen restart: on resume/monitor the re-exec predates the tail
+        /Current software version = [0-9]+, expected software version = [0-9]+/ && !done {
             done = 1
-            v = "?"
-            if (match($0, /Current software version = [0-9]+/)) v = substr($0, RSTART + 27, RLENGTH - 27)
-            banner("✗ OTA NOT CONFIRMED — running v" v ", expected v" target)
+            match($0, /Current software version = [0-9]+/); v = substr($0, RSTART + 27, RLENGTH - 27)
+            match($0, /expected software version = [0-9]+/); e = substr($0, RSTART + 28, RLENGTH - 28)
+            banner("✗ OTA NOT CONFIRMED — running v" v ", expected v" e)
             next
         }
-        restarted && !done && t_restart > 0 && ts($0) > t_restart + 3 {
+        /Failed to confirm image/ && !done {
             done = 1
-            banner("✓ OTA APPLIED — software version v" from " → v" target " (now running v" target ")")
-        }'
+            banner("✗ OTA NOT CONFIRMED — expected v" target)
+            next
+        }
+        # Log timestamps also decide it, for replayed logs where no time passes
+        restarted && !done && t_restart > 0 && ts($0) > t_restart + 3 { confirmed() }'
 }
 
 print_version_info() {
@@ -266,7 +386,7 @@ start_requestor() {
         echo ""
         print_verify_hint "$instance"
 
-        follow_ota_log "$log_file"
+        follow_ota_log "$log_file" "$instance" "$skip_exec"
     else
         echo "⚠ Timed out after 600s waiting for commissioning"
         echo "  Requestor is still running — check status/logs and retry commissioning"
@@ -300,7 +420,7 @@ monitor_requestor() {
     echo "Press Ctrl+C to stop monitoring"
     echo ""
 
-    follow_ota_log "$log_file" "Commission"
+    follow_ota_log "$log_file" "$instance" "$(requestor_skip_exec "$instance")" "Commission"
 }
 
 show_status() {
@@ -334,6 +454,18 @@ resume_requestor() {
     print_version_info "$skip_exec"
     echo ""
 
+    # Resume always launches the v$CURRENT_VERSION build. If the running process
+    # already re-exec'd into an applied image, that is a silent downgrade.
+    local pid exe
+    pid=$(cat "${HARNESS_ROOT}/requestor-${instance}.pid" 2>/dev/null) || true
+    exe=$(readlink "/proc/${pid:-0}/exe" 2>/dev/null) || true
+    if [[ "$exe" == /tmp/ota.update* ]]; then
+        echo "⚠ Requestor $instance is running an applied OTA image ($exe)."
+        echo "  Resuming restarts it on the v$CURRENT_VERSION build, so it goes back to the old version"
+        echo "  and will ask your provider for the update again."
+        echo ""
+    fi
+
     # Stop if currently running
     "$SCRIPT_DIR/internal/run-requestor.sh" stop "$instance" 2>/dev/null || true
 
@@ -360,7 +492,7 @@ resume_requestor() {
     echo ""
     print_verify_hint "$instance"
 
-    follow_ota_log "$log_file"
+    follow_ota_log "$log_file" "$instance" "$skip_exec"
 }
 
 clean_requestor() {
@@ -379,6 +511,12 @@ for arg in "${@:3}"; do
         *) echo "Unknown option: $arg"; usage ;;
     esac
 done
+
+# Instance ids become ports, discriminators and file names
+if [ -n "${2:-}" ] && ! [[ "$2" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: instance must be a number (got: $2)"
+    usage
+fi
 
 # Main command dispatch
 case "${1:-}" in
